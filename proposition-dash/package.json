@@ -31,8 +31,11 @@
     "@angular/platform-server": "^20.1.0",
     "@angular/router": "^20.1.0",
     "@angular/ssr": "^20.1.6",
+    "autoprefixer": "^10.4.21",
     "express": "^5.1.0",
+    "postcss": "^8.5.6",
     "rxjs": "~7.8.0",
+    "tailwindcss": "^3.4.17",
     "tslib": "^2.3.0"
   },
   "devDependencies": {
