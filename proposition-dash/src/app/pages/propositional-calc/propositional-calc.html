@@ -1,1 +1,41 @@
-<p>propositional-calc works!</p>
+
+<div class="max-w-xl mx-auto mt-10 p-8 bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 rounded-3xl shadow-2xl border border-blue-200">
+	<h1 class="text-3xl font-extrabold mb-6 text-center text-blue-700 drop-shadow">Calculadora de Proposiciones Lógicas</h1>
+	<div class="mb-4">
+		<input
+			type="text"
+			[value]="proposition"
+			readonly
+			class="w-full border-2 border-blue-300 rounded-lg px-4 py-3 text-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 shadow"
+			placeholder="Construye tu proposición lógica..."
+		/>
+	</div>
+	<div class="grid grid-cols-6 gap-2 mb-4">
+		<button *ngFor="let symbol of symbols" (click)="addSymbol(symbol)" type="button"
+			class="bg-blue-500 text-white font-bold py-2 rounded-lg shadow hover:bg-blue-700 transition text-lg">
+			{{ symbol }}
+		</button>
+		<button *ngFor="let letter of letters" (click)="addSymbol(letter)" type="button"
+			class="bg-purple-500 text-white font-bold py-2 rounded-lg shadow hover:bg-purple-700 transition text-lg">
+			{{ letter }}
+		</button>
+		<button (click)="addSymbol('(')" type="button" class="bg-pink-500 text-white font-bold py-2 rounded-lg shadow hover:bg-pink-700 transition text-lg">(</button>
+		<button (click)="addSymbol(')')" type="button" class="bg-pink-500 text-white font-bold py-2 rounded-lg shadow hover:bg-pink-700 transition text-lg">)</button>
+		<button (click)="removeLast()" type="button" class="col-span-2 bg-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow hover:bg-gray-400 transition text-lg">← Borrar</button>
+		<button (click)="clearAll()" type="button" class="col-span-2 bg-red-400 text-white font-bold py-2 rounded-lg shadow hover:bg-red-600 transition text-lg">Limpiar</button>
+	</div>
+	<form (submit)="onValidate($event)" class="flex flex-col gap-4">
+		<button
+			type="submit"
+			class="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 text-white py-3 rounded-xl font-bold text-lg shadow hover:scale-105 transition"
+		>
+			Validar
+		</button>
+	</form>
+	<div *ngIf="error" class="mt-4 text-red-600 font-semibold text-center animate-pulse">
+		{{ error }}
+	</div>
+	<div *ngIf="result" class="mt-4 text-green-600 font-semibold text-center animate-pulse">
+		{{ result }}
+	</div>
+</div>
