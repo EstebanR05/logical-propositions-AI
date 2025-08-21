@@ -10,20 +10,28 @@
 			placeholder="Construye tu proposición lógica..."
 		/>
 	</div>
-	<div class="grid grid-cols-6 gap-2 mb-4">
-		<button *ngFor="let symbol of symbols" (click)="addSymbol(symbol)" type="button"
-			class="bg-blue-500 text-white font-bold py-2 rounded-lg shadow hover:bg-blue-700 transition text-lg">
-			{{ symbol }}
-		</button>
-		<button *ngFor="let letter of letters" (click)="addSymbol(letter)" type="button"
-			class="bg-purple-500 text-white font-bold py-2 rounded-lg shadow hover:bg-purple-700 transition text-lg">
-			{{ letter }}
-		</button>
-		<button (click)="addSymbol('(')" type="button" class="bg-pink-500 text-white font-bold py-2 rounded-lg shadow hover:bg-pink-700 transition text-lg">(</button>
-		<button (click)="addSymbol(')')" type="button" class="bg-pink-500 text-white font-bold py-2 rounded-lg shadow hover:bg-pink-700 transition text-lg">)</button>
-		<button (click)="removeLast()" type="button" class="col-span-2 bg-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow hover:bg-gray-400 transition text-lg">← Borrar</button>
-		<button (click)="clearAll()" type="button" class="col-span-2 bg-red-400 text-white font-bold py-2 rounded-lg shadow hover:bg-red-600 transition text-lg">Limpiar</button>
-	</div>
+			<div class="mb-4">
+				<!-- Botones de símbolos y letras en cuadrícula -->
+				<div class="grid grid-cols-4 gap-2 mb-2">
+					<button *ngFor="let symbol of symbols" (click)="addSymbol(symbol)" type="button"
+						class="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-blue-700 transition text-lg">
+						{{ symbol }}
+					</button>
+					<button (click)="addSymbol('(')" type="button" class="bg-pink-500 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-pink-700 transition text-lg">(</button>
+					<button (click)="addSymbol(')')" type="button" class="bg-pink-500 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-pink-700 transition text-lg">)</button>
+					<ng-container *ngFor="let letter of letters">
+						<button (click)="addSymbol(letter)" type="button"
+							class="bg-purple-500 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-purple-700 transition text-lg">
+							{{ letter }}
+						</button>
+					</ng-container>
+				</div>
+					<!-- Botones de acción en una fila horizontal, centrados y con espacio -->
+					<div class="flex flex-row gap-6 mt-6 justify-center w-full">
+						<button (click)="removeLast()" type="button" class="w-1/2 max-w-xs bg-gray-300 text-gray-700 font-bold py-3 px-4 rounded-lg shadow hover:bg-gray-400 transition text-lg">← Borrar</button>
+						<button (click)="clearAll()" type="button" class="w-1/2 max-w-xs bg-red-400 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-red-600 transition text-lg">Limpiar</button>
+					</div>
+			</div>
 	<form (submit)="onValidate($event)" class="flex flex-col gap-4">
 		<button
 			type="submit"
@@ -32,10 +40,33 @@
 			Validar
 		</button>
 	</form>
-	<div *ngIf="error" class="mt-4 text-red-600 font-semibold text-center animate-pulse">
-		{{ error }}
-	</div>
-	<div *ngIf="result" class="mt-4 text-green-600 font-semibold text-center animate-pulse">
-		{{ result }}
-	</div>
+		<div *ngIf="error" class="mt-4 text-red-600 font-semibold text-center animate-pulse">
+			{{ error }}
+		</div>
+
+	<!-- Modal para mostrar el proceso paso a paso -->
+		<div *ngIf="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+			<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 relative animate-fade-in" style="max-height: 80vh;">
+				<button (click)="closeModal()" class="absolute top-4 right-4 text-gray-500 hover:text-red-500 text-2xl font-bold">&times;</button>
+				<h2 class="text-2xl font-bold mb-4 text-blue-700 text-center">Proceso paso a paso</h2>
+				<div *ngIf="truthTableSteps.length > 0" class="overflow-y-auto" style="max-height: 60vh;">
+					<div class="overflow-x-auto">
+									<table class="w-full text-center border border-gray-300 rounded-lg mb-6">
+										<thead>
+											<tr>
+												<th *ngFor="let header of truthTableHeaders" class="px-2 py-1 border">{{ header }}</th>
+											</tr>
+										</thead>
+										<tbody>
+											<tr *ngFor="let step of truthTableSteps">
+												<td *ngFor="let header of truthTableHeaders" class="border font-bold">{{ step[header] }}</td>
+											</tr>
+										</tbody>
+									</table>
+					</div>
+
+				</div>
+				<div *ngIf="truthTableSteps.length === 0" class="text-center text-gray-500">No hay pasos para mostrar.</div>
+			</div>
+		</div>
 </div>
