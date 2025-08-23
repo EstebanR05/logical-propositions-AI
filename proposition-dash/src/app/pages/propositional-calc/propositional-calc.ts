@@ -64,8 +64,9 @@ export class PropositionalCalc {
   }
 
   private validateProposition(expr: string): string | null {
-    const allowed = /^[pqr()¬∧∨→↔\s]+$/;
-    const op = '[¬∧∨→↔]';
+  const allowed = /^[pqr()¬∧∨→↔\s]+$/;
+  const op = '[¬∧∨→↔]';
+  const binOp = '[∧∨→↔]';
     let balance = 0;
 
     if (!allowed.test(expr)) {
@@ -77,10 +78,16 @@ export class PropositionalCalc {
       if (char === ')') balance--;
       if (balance < 0) return 'Paréntesis desbalanceados.';
     }
-    
+
     if (balance !== 0) return 'Paréntesis desbalanceados.';
-    if (new RegExp(`${op}{2,}`).test(expr)) return 'No puedes poner operadores seguidos.';
-    if (new RegExp(`^${op}`).test(expr)) return 'No puedes iniciar con un operador.';
+    // Solo operadores binarios seguidos, no ¬
+    if (new RegExp(`${binOp}{2,}`).test(expr)) return 'No puedes poner operadores binarios seguidos.';
+    // Negación seguida de operador binario (¬∧, ¬∨, ¬→, ¬↔)
+    if (new RegExp(`¬${binOp}`).test(expr)) return 'La negación debe aplicarse a una variable o subexpresión, no a un operador.';
+    // Variable seguida de negación (p¬, q¬, r¬)
+    if (new RegExp(`[pqr]¬`).test(expr)) return 'La negación debe ir antes de la variable, no después.';
+    // Solo operadores binarios no pueden ir al inicio (¬ sí puede)
+    if (new RegExp(`^${binOp}`).test(expr)) return 'No puedes iniciar con un operador binario.';
     if (new RegExp(`${op}$`).test(expr)) return 'No puedes terminar con un operador.';
 
     // No permitir operadores sin operandos válidos antes/después
@@ -96,10 +103,21 @@ export class PropositionalCalc {
   }
 
   private evalProposition(expr: string, values: { [k: string]: boolean }): boolean {
-    const tokens = expr.replace(/\s+/g, '').split("");
+    // Preprocesar para tratar negaciones como tokens únicos
+    let processedExpr = expr.replace(/\s+/g, '');
+    
+    // Reemplazar todas las negaciones ¬[variable] con tokens especiales
+    const variables = Object.keys(values).filter(key => !key.startsWith('¬') && /^[pqr]$/.test(key));
+    variables.forEach((variable, index) => {
+      const negation = `¬${variable}`;
+      const token = `§N${index}§`;
+      processedExpr = processedExpr.replace(new RegExp(`¬${variable}`, 'g'), token);
+    });
+    
+    const tokens = processedExpr.split("");
     const posObj = { pos: 0 };
     try {
-      return this.evalParser(tokens, values, posObj);
+      return this.evalParser(tokens, values, posObj, variables);
     } catch {
       return false;
     }
@@ -109,22 +127,26 @@ export class PropositionalCalc {
     this.truthTableSteps = [];
     this.truthTableHeaders = [];
     const variables: string[] = [];
-
     for (const v of expr) {
       if ((v === 'p' || v === 'q' || v === 'r') && !variables.includes(v)) variables.push(v);
     }
 
+    // 1. Negaciones simples
+    const negations: string[] = [];
+    variables.forEach(v => {
+      if (expr.includes(`¬${v}`)) negations.push(`¬${v}`);
+    });
+
+    // 2. Subproposiciones internas (solo las de primer nivel de paréntesis)
     const subprops: string[] = [];
     const regexSub = /\(([^()]+)\)/g;
     let match;
-
     while ((match = regexSub.exec(expr)) !== null) {
       if (!subprops.includes(match[1])) subprops.push(match[1]);
     }
 
-    const simpleOps = expr.match(/([pqr][¬]?([∧∨→↔])[pqr][¬]?)/g) || [];
-    simpleOps.forEach(op => { if (!subprops.includes(op)) subprops.push(op); });
-    this.truthTableHeaders = [...variables, ...subprops, expr];
+    // 3. Proposición principal
+    this.truthTableHeaders = [...variables, ...negations, ...subprops, expr];
 
     const combos = (vars: string[]): boolean[][] => {
       if (vars.length === 0) return [[]];
@@ -141,42 +163,115 @@ export class PropositionalCalc {
       const values: { [k: string]: boolean } = {};
       variables.forEach((v, i) => values[v] = combo[i]);
       const row: any = {};
+      // Variables
       variables.forEach(v => row[v] = values[v] ? 'V' : 'F');
-      subprops.forEach(sub => row[sub] = this.evalProposition(sub, values) ? 'V' : 'F');
-      row[expr] = this.evalProposition(expr, values) ? 'V' : 'F';
+      // Negaciones
+      negations.forEach(n => {
+        const varName = n.replace('¬', '');
+        row[n] = this.tableRuleService.negacion(values[varName]) ? 'V' : 'F';
+      });
+      // Subproposiciones (usando los resultados de negaciones)
+      subprops.forEach(sub => {
+        // Para evaluar la subproposición, crear un nuevo objeto de valores incluyendo negaciones
+        const subValues = { ...values };
+        negations.forEach(n => {
+          const varName = n.replace('¬', '');
+          subValues[n] = this.tableRuleService.negacion(values[varName]);
+        });
+        row[sub] = this.evalProposition(sub, subValues) ? 'V' : 'F';
+      });
+      // Proposición principal (reemplazando subproposiciones con sus valores)
+      let mainExpr = expr;
+      subprops.forEach(sub => {
+        const subValue = row[sub] === 'V';
+        // Reemplazar la subproposición completa con su valor
+        mainExpr = mainExpr.replace(`(${sub})`, subValue ? 'TEMP_TRUE' : 'TEMP_FALSE');
+      });
+      
+      const mainValues = { ...values };
+      negations.forEach(n => {
+        const varName = n.replace('¬', '');
+        mainValues[n] = this.tableRuleService.negacion(values[varName]);
+      });
+      // Agregar valores temporales para las subproposiciones evaluadas
+      mainValues['TEMP_TRUE'] = true;
+      mainValues['TEMP_FALSE'] = false;
+      
+      row[expr] = this.evalProposition(mainExpr, mainValues) ? 'V' : 'F';
       this.truthTableSteps.push(row);
     }
   }
 
-  private evalParser(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }): boolean {
-    let result = this.getTokenValue(tokens, values, posObj);
+  private evalParser(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }, variables?: string[]): boolean {
+    let result = this.getTokenValue(tokens, values, posObj, variables);
     while (posObj.pos < tokens.length) {
       const op = tokens[posObj.pos];
       if (!['∧', '∨', '→', '↔'].includes(op)) break;
       posObj.pos++;
-      const right = this.getTokenValue(tokens, values, posObj);
+      const right = this.getTokenValue(tokens, values, posObj, variables);
+      // Asegurar el orden correcto: result es el operando izquierdo, right es el operando derecho
       result = this.applyOp(result, right, op);
     }
     return result;
   }
 
-  private getTokenValue(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }): boolean {
+  private getTokenValue(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }, variables?: string[]): boolean {
     const token = tokens[posObj.pos];
     switch (token) {
       case '(': {
         posObj.pos++;
-        const val = this.evalParser(tokens, values, posObj);
+        const val = this.evalParser(tokens, values, posObj, variables);
         if (tokens[posObj.pos] === ')') posObj.pos++;
         return val;
       }
       case '¬': {
         posObj.pos++;
-        return this.tableRuleService.negacion(this.getTokenValue(tokens, values, posObj));
+        return this.tableRuleService.negacion(this.getTokenValue(tokens, values, posObj, variables));
       }
-      case 'p': posObj.pos++; return values['p'];
-      case 'q': posObj.pos++; return values['q'];
-      case 'r': posObj.pos++; return values['r'];
+      case '§': {
+        // Manejar tokens especiales de negación ¬[variable]
+        let tokenStr = '';
+        let i = posObj.pos;
+        while (i < tokens.length && tokens[i] !== '§') {
+          tokenStr += tokens[i];
+          i++;
+        }
+        if (i < tokens.length && tokens[i] === '§') {
+          tokenStr += tokens[i];
+          i++;
+        }
+        
+        // Extraer el índice de la variable desde el token §N[index]§
+        const match = tokenStr.match(/§N(\d+)§/);
+        if (match && variables) {
+          const varIndex = parseInt(match[1]);
+          const variable = variables[varIndex];
+          const negationKey = `¬${variable}`;
+          posObj.pos = i;
+          return values[negationKey] !== undefined ? values[negationKey] : this.tableRuleService.negacion(values[variable]);
+        }
+        posObj.pos++;
+        return false;
+      }
       default:
+        // Manejar variables p, q, r directamente
+        if (/^[pqr]$/.test(token)) {
+          posObj.pos++;
+          return values[token] !== undefined ? values[token] : false;
+        }
+        // Manejar tokens temporales para subproposiciones
+        if (token === 'T') {
+          const tempToken = tokens.slice(posObj.pos, posObj.pos + 9).join('');
+          if (tempToken === 'TEMP_TRUE') {
+            posObj.pos += 9;
+            return values['TEMP_TRUE'] !== undefined ? values['TEMP_TRUE'] : true;
+          }
+          const tempFalseToken = tokens.slice(posObj.pos, posObj.pos + 10).join('');
+          if (tempFalseToken === 'TEMP_FALSE') {
+            posObj.pos += 10;
+            return values['TEMP_FALSE'] !== undefined ? values['TEMP_FALSE'] : false;
+          }
+        }
         posObj.pos++;
         return false;
     }
@@ -186,7 +281,9 @@ export class PropositionalCalc {
     switch (op) {
       case '∧': return this.tableRuleService.conjuncion(a, b);
       case '∨': return this.tableRuleService.disyuncion(a, b);
-      case '→': return this.tableRuleService.condicional(a, b);
+      case '→': 
+        // En A→B: a es el antecedente, b es el consecuente
+        return this.tableRuleService.condicional(a, b);
       case '↔': return this.tableRuleService.bicondicional(a, b);
       default: return false;
     }
