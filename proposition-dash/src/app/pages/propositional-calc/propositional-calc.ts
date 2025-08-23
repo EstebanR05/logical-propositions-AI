@@ -182,20 +182,34 @@ export class PropositionalCalc {
       });
       // Proposición principal (reemplazando subproposiciones con sus valores)
       let mainExpr = expr;
-      subprops.forEach(sub => {
+      
+      // Reemplazar subproposiciones por tokens únicos
+      subprops.forEach((sub, index) => {
         const subValue = row[sub] === 'V';
-        // Reemplazar la subproposición completa con su valor
-        mainExpr = mainExpr.replace(`(${sub})`, subValue ? 'TEMP_TRUE' : 'TEMP_FALSE');
+        const token = `SUB${index}`;
+        mainExpr = mainExpr.replace(`(${sub})`, token);
+        // Si la subproposición no tiene paréntesis pero está en la expresión
+        if (!mainExpr.includes(token)) {
+          mainExpr = mainExpr.replace(sub, token);
+        }
+      });
+      
+      // Reemplazar negaciones por tokens únicos
+      negations.forEach((neg, index) => {
+        const negValue = row[neg] === 'V';
+        const token = `NEG${index}`;
+        mainExpr = mainExpr.replace(neg, token);
       });
       
       const mainValues = { ...values };
-      negations.forEach(n => {
-        const varName = n.replace('¬', '');
-        mainValues[n] = this.tableRuleService.negacion(values[varName]);
+      // Agregar valores de subproposiciones
+      subprops.forEach((sub, index) => {
+        mainValues[`SUB${index}`] = row[sub] === 'V';
       });
-      // Agregar valores temporales para las subproposiciones evaluadas
-      mainValues['TEMP_TRUE'] = true;
-      mainValues['TEMP_FALSE'] = false;
+      // Agregar valores de negaciones
+      negations.forEach((neg, index) => {
+        mainValues[`NEG${index}`] = row[neg] === 'V';
+      });
       
       row[expr] = this.evalProposition(mainExpr, mainValues) ? 'V' : 'F';
       this.truthTableSteps.push(row);
@@ -259,17 +273,24 @@ export class PropositionalCalc {
           posObj.pos++;
           return values[token] !== undefined ? values[token] : false;
         }
-        // Manejar tokens temporales para subproposiciones
-        if (token === 'T') {
-          const tempToken = tokens.slice(posObj.pos, posObj.pos + 9).join('');
-          if (tempToken === 'TEMP_TRUE') {
-            posObj.pos += 9;
-            return values['TEMP_TRUE'] !== undefined ? values['TEMP_TRUE'] : true;
+        // Manejar tokens de subproposiciones SUB0, SUB1, etc.
+        if (token === 'S') {
+          const remaining = tokens.slice(posObj.pos).join('');
+          const subMatch = remaining.match(/^(SUB\d+)/);
+          if (subMatch) {
+            const subToken = subMatch[1];
+            posObj.pos += subToken.length;
+            return values[subToken] !== undefined ? values[subToken] : false;
           }
-          const tempFalseToken = tokens.slice(posObj.pos, posObj.pos + 10).join('');
-          if (tempFalseToken === 'TEMP_FALSE') {
-            posObj.pos += 10;
-            return values['TEMP_FALSE'] !== undefined ? values['TEMP_FALSE'] : false;
+        }
+        // Manejar tokens de negaciones NEG0, NEG1, etc.
+        if (token === 'N') {
+          const remaining = tokens.slice(posObj.pos).join('');
+          const negMatch = remaining.match(/^(NEG\d+)/);
+          if (negMatch) {
+            const negToken = negMatch[1];
+            posObj.pos += negToken.length;
+            return values[negToken] !== undefined ? values[negToken] : false;
           }
         }
         posObj.pos++;
