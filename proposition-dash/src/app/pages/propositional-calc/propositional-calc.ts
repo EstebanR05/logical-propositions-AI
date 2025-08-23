@@ -106,6 +106,8 @@ export class PropositionalCalc {
     // Preprocesar para tratar negaciones como tokens únicos
     let processedExpr = expr.replace(/\s+/g, '');
     
+    console.log('Evaluando expresión:', expr, 'con valores:', values);
+    
     // Reemplazar todas las negaciones ¬[variable] con tokens especiales
     const variables = Object.keys(values).filter(key => !key.startsWith('¬') && /^[pqr]$/.test(key));
     variables.forEach((variable, index) => {
@@ -114,11 +116,16 @@ export class PropositionalCalc {
       processedExpr = processedExpr.replace(new RegExp(`¬${variable}`, 'g'), token);
     });
     
+    console.log('Expresión procesada:', processedExpr);
+    
     const tokens = processedExpr.split("");
     const posObj = { pos: 0 };
     try {
-      return this.evalParser(tokens, values, posObj, variables);
-    } catch {
+      const result = this.evalParser(tokens, values, posObj, variables);
+      console.log('Resultado final:', result);
+      return result;
+    } catch (e) {
+      console.error('Error evaluando:', e);
       return false;
     }
   }
@@ -137,16 +144,44 @@ export class PropositionalCalc {
       if (expr.includes(`¬${v}`)) negations.push(`¬${v}`);
     });
 
-    // 2. Subproposiciones internas (solo las de primer nivel de paréntesis)
-    const subprops: string[] = [];
+    // 2. Subproposiciones internas ordenadas por dependencia
+    const allSubprops: string[] = [];
+    const negatedSubprops: string[] = [];
+    
+    // Detectar todas las subproposiciones dentro de paréntesis
     const regexSub = /\(([^()]+)\)/g;
     let match;
+    const foundSubprops: string[] = [];
     while ((match = regexSub.exec(expr)) !== null) {
-      if (!subprops.includes(match[1])) subprops.push(match[1]);
+      if (!foundSubprops.includes(match[1])) foundSubprops.push(match[1]);
     }
+    
+    // Ordenar subproposiciones: primero las que no contienen otras subproposiciones
+    const basicSubprops = foundSubprops.filter(sub => {
+      // Una subproposición es básica si no contiene paréntesis internos
+      return !foundSubprops.some(otherSub => otherSub !== sub && sub.includes(`(${otherSub})`));
+    });
+    
+    // Agregar subproposiciones básicas primero
+    basicSubprops.forEach(sub => {
+      if (!allSubprops.includes(sub)) allSubprops.push(sub);
+    });
+    
+    // Detectar negaciones de subproposiciones después de las básicas
+    basicSubprops.forEach(sub => {
+      const negatedSub = `¬(${sub})`;
+      if (expr.includes(negatedSub)) {
+        negatedSubprops.push(negatedSub);
+      }
+    });
+    
+    // Agregar otras subproposiciones complejas
+    foundSubprops.forEach(sub => {
+      if (!allSubprops.includes(sub)) allSubprops.push(sub);
+    });
 
     // 3. Proposición principal
-    this.truthTableHeaders = [...variables, ...negations, ...subprops, expr];
+    this.truthTableHeaders = [...variables, ...negations, ...allSubprops, ...negatedSubprops, expr];
 
     const combos = (vars: string[]): boolean[][] => {
       if (vars.length === 0) return [[]];
@@ -171,21 +206,36 @@ export class PropositionalCalc {
         row[n] = this.tableRuleService.negacion(values[varName]) ? 'V' : 'F';
       });
       // Subproposiciones (usando los resultados de negaciones)
-      subprops.forEach(sub => {
+      allSubprops.forEach(sub => {
         // Para evaluar la subproposición, crear un nuevo objeto de valores incluyendo negaciones
         const subValues = { ...values };
         negations.forEach(n => {
           const varName = n.replace('¬', '');
           subValues[n] = this.tableRuleService.negacion(values[varName]);
         });
+        // Debug: verificar valores para subproposiciones
+        console.log(`Evaluando ${sub} con valores:`, subValues);
         row[sub] = this.evalProposition(sub, subValues) ? 'V' : 'F';
+        console.log(`Resultado de ${sub}:`, row[sub]);
+      });
+      // Negaciones de subproposiciones
+      negatedSubprops.forEach(negSub => {
+        // Extraer la subproposición base
+        const baseSub = negSub.substring(2, negSub.length - 1); // Remover ¬( y )
+        const baseValue = row[baseSub] === 'V';
+        row[negSub] = this.tableRuleService.negacion(baseValue) ? 'V' : 'F';
       });
       // Proposición principal (reemplazando subproposiciones con sus valores)
       let mainExpr = expr;
       
+      // Reemplazar negaciones de subproposiciones primero
+      negatedSubprops.forEach((negSub, index) => {
+        const token = `NEGSUB${index}`;
+        mainExpr = mainExpr.replace(negSub, token);
+      });
+      
       // Reemplazar subproposiciones por tokens únicos
-      subprops.forEach((sub, index) => {
-        const subValue = row[sub] === 'V';
+      allSubprops.forEach((sub, index) => {
         const token = `SUB${index}`;
         mainExpr = mainExpr.replace(`(${sub})`, token);
         // Si la subproposición no tiene paréntesis pero está en la expresión
@@ -196,14 +246,17 @@ export class PropositionalCalc {
       
       // Reemplazar negaciones por tokens únicos
       negations.forEach((neg, index) => {
-        const negValue = row[neg] === 'V';
         const token = `NEG${index}`;
         mainExpr = mainExpr.replace(neg, token);
       });
       
       const mainValues = { ...values };
+      // Agregar valores de negaciones de subproposiciones
+      negatedSubprops.forEach((negSub, index) => {
+        mainValues[`NEGSUB${index}`] = row[negSub] === 'V';
+      });
       // Agregar valores de subproposiciones
-      subprops.forEach((sub, index) => {
+      allSubprops.forEach((sub, index) => {
         mainValues[`SUB${index}`] = row[sub] === 'V';
       });
       // Agregar valores de negaciones
@@ -231,6 +284,8 @@ export class PropositionalCalc {
 
   private getTokenValue(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }, variables?: string[]): boolean {
     const token = tokens[posObj.pos];
+    console.log('Procesando token:', token, 'en posición:', posObj.pos, 'valores disponibles:', Object.keys(values));
+    
     switch (token) {
       case '(': {
         posObj.pos++;
@@ -246,14 +301,16 @@ export class PropositionalCalc {
         // Manejar tokens especiales de negación ¬[variable]
         let tokenStr = '';
         let i = posObj.pos;
-        while (i < tokens.length && tokens[i] !== '§') {
+        
+        // Construir el token completo §N[index]§
+        while (i < tokens.length) {
           tokenStr += tokens[i];
           i++;
+          // Si encontramos el segundo §, terminamos
+          if (tokens[i-1] === '§' && tokenStr.length > 1) break;
         }
-        if (i < tokens.length && tokens[i] === '§') {
-          tokenStr += tokens[i];
-          i++;
-        }
+        
+        console.log('Token especial encontrado:', tokenStr);
         
         // Extraer el índice de la variable desde el token §N[index]§
         const match = tokenStr.match(/§N(\d+)§/);
@@ -262,15 +319,17 @@ export class PropositionalCalc {
           const variable = variables[varIndex];
           const negationKey = `¬${variable}`;
           posObj.pos = i;
+          console.log('Buscando negación:', negationKey, 'valor:', values[negationKey]);
           return values[negationKey] !== undefined ? values[negationKey] : this.tableRuleService.negacion(values[variable]);
         }
-        posObj.pos++;
+        posObj.pos = i;
         return false;
       }
       default:
         // Manejar variables p, q, r directamente
         if (/^[pqr]$/.test(token)) {
           posObj.pos++;
+          console.log('Variable encontrada:', token, 'valor:', values[token]);
           return values[token] !== undefined ? values[token] : false;
         }
         // Manejar tokens de subproposiciones SUB0, SUB1, etc.
@@ -291,6 +350,13 @@ export class PropositionalCalc {
             const negToken = negMatch[1];
             posObj.pos += negToken.length;
             return values[negToken] !== undefined ? values[negToken] : false;
+          }
+          // Manejar tokens de negaciones de subproposiciones NEGSUB0, NEGSUB1, etc.
+          const negSubMatch = remaining.match(/^(NEGSUB\d+)/);
+          if (negSubMatch) {
+            const negSubToken = negSubMatch[1];
+            posObj.pos += negSubToken.length;
+            return values[negSubToken] !== undefined ? values[negSubToken] : false;
           }
         }
         posObj.pos++;
