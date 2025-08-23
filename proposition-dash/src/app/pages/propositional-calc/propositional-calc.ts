@@ -1,35 +1,38 @@
-
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { TableRuleService } from '../../services/tables.service';
 
 @Component({
   selector: 'app-propositional-calc',
   imports: [CommonModule, FormsModule],
+  providers: [TableRuleService],
   templateUrl: './propositional-calc.html',
   styleUrl: './propositional-calc.css'
 })
 export class PropositionalCalc {
-  proposition: string = '';
-  error: string = '';
-  result: string = '';
+  public proposition: string = '';
+  public error: string = '';
+  public result: string = '';
 
-  symbols: string[] = ['¬', '∧', '∨', '→', '↔'];
-  letters: string[] = ['p', 'q', 'r'];
+  public symbols: string[] = ['¬', '∧', '∨', '→', '↔'];
+  public letters: string[] = ['p', 'q', 'r'];
 
-  showModal: boolean = false;
-  truthTableSteps: Array<any> = [];
-  truthTableHeaders: string[] = [];
+  public showModal: boolean = false;
+  public truthTableSteps: Array<any> = [];
+  public truthTableHeaders: string[] = [];
 
-  addSymbol(symbol: string) {
+  constructor(private tableRuleService: TableRuleService) { }
+
+  public addSymbol(symbol: string) {
     this.proposition += symbol;
   }
 
-  removeLast() {
+  public removeLast() {
     this.proposition = this.proposition.slice(0, -1);
   }
 
-  clearAll() {
+  public clearAll() {
     this.proposition = '';
     this.error = '';
     this.result = '';
@@ -37,112 +40,92 @@ export class PropositionalCalc {
     this.showModal = false;
   }
 
-  // Validación básica de proposiciones lógicas
-  validateProposition(expr: string): string | null {
+  public closeModal() {
+    this.showModal = false;
+    this.truthTableSteps = [];
+    this.result = '';
+  }
+
+  public onValidate(event: Event) {
+    event.preventDefault();
+    this.error = '';
+    this.result = '';
+    this.truthTableSteps = [];
+    const validation = this.validateProposition(this.proposition.trim());
+    
+    if (!validation) {
+      this.result = 'La proposición es válida.';
+      this.generateTruthTable(this.proposition.trim());
+      this.showModal = true;
+      return;
+    }
+
+    this.error = validation;
+  }
+
+  private validateProposition(expr: string): string | null {
     const allowed = /^[pqr()¬∧∨→↔\s]+$/;
+    const op = '[¬∧∨→↔]';
+    let balance = 0;
+
     if (!allowed.test(expr)) {
       return 'Solo puedes usar p, q, r y operadores lógicos.';
     }
-    let balance = 0;
+
     for (const char of expr) {
       if (char === '(') balance++;
       if (char === ')') balance--;
       if (balance < 0) return 'Paréntesis desbalanceados.';
     }
+    
     if (balance !== 0) return 'Paréntesis desbalanceados.';
+    if (new RegExp(`${op}{2,}`).test(expr)) return 'No puedes poner operadores seguidos.';
+    if (new RegExp(`^${op}`).test(expr)) return 'No puedes iniciar con un operador.';
+    if (new RegExp(`${op}$`).test(expr)) return 'No puedes terminar con un operador.';
+
+    // No permitir operadores sin operandos válidos antes/después
+    if (/([∧∨→↔])\)/.test(expr) || /\(([∧∨→↔])/.test(expr)) return 'Operador mal ubicado cerca de paréntesis.';
+    if (/([∧∨→↔]){2,}/.test(expr)) return 'Operadores mal ubicados.';
+    if (/([∧∨→↔])$/.test(expr)) return 'Operador sin operando después.';
+    if (/^([∧∨→↔])/.test(expr)) return 'Operador sin operando antes.';
+    if (/([pqr])([∧∨→↔])\1/.test(expr)) return 'No puedes comparar una variable consigo misma (ejemplo: p∧p, q↔q, r→r).';
+
+    const variables = Array.from(new Set(expr.match(/[pqr]/g) || []));
+    if (variables.length === 0) return 'Debes usar al menos una variable (p, q o r).';
     return null;
   }
 
-  // Evaluador seguro de proposiciones lógicas
-  evalProposition(expr: string, values: { [k: string]: boolean }): boolean {
-    // Parser recursivo para ¬, ∧, ∨, →, ↔ y paréntesis
-    // Adaptado para expresiones con p, q, r y operadores
+  private evalProposition(expr: string, values: { [k: string]: boolean }): boolean {
     const tokens = expr.replace(/\s+/g, '').split("");
-    let pos = 0;
-
-    function parseExpr(): boolean {
-      let result = parseTerm();
-      while (pos < tokens.length) {
-        if (tokens[pos] === '∨') {
-          pos++;
-          result = result || parseTerm();
-        } else if (tokens[pos] === '↔') {
-          pos++;
-          result = result === parseTerm();
-        } else {
-          break;
-        }
-      }
-      return result;
-    }
-
-    function parseTerm(): boolean {
-      let result = parseFactor();
-      while (pos < tokens.length) {
-        if (tokens[pos] === '∧') {
-          pos++;
-          result = result && parseFactor();
-        } else if (tokens[pos] === '→') {
-          pos++;
-          // a → b es (!a || b)
-          result = (!result) || parseFactor();
-        } else {
-          break;
-        }
-      }
-      return result;
-    }
-
-    function parseFactor(): boolean {
-      if (tokens[pos] === '¬') {
-        pos++;
-        return !parseFactor();
-      } else if (tokens[pos] === '(') {
-        pos++;
-        const val = parseExpr();
-        if (tokens[pos] === ')') pos++;
-        return val;
-      } else if (tokens[pos] === 'p' || tokens[pos] === 'q' || tokens[pos] === 'r') {
-        const v = values[tokens[pos] as 'p' | 'q' | 'r'];
-        pos++;
-        return v;
-      } else {
-        // Si hay error de parsing, retorna false
-        pos++;
-        return false;
-      }
-    }
-
-    pos = 0;
+    const posObj = { pos: 0 };
     try {
-      const val = parseExpr();
-      return val;
+      return this.evalParser(tokens, values, posObj);
     } catch {
       return false;
     }
   }
 
-  // Generar la tabla de verdad dinámica
-  generateTruthTable(expr: string) {
-  this.truthTableSteps = [];
-  this.truthTableHeaders = [];
-    // Detectar variables presentes
-    const variables = Array.from(new Set(expr.match(/[pqr]/g) || []));
-    // Detectar subproposiciones (solo nivel 1: paréntesis y operadores principales)
-    // Para demo, extraer subproposiciones entre paréntesis y operadores principales
+  private generateTruthTable(expr: string) {
+    this.truthTableSteps = [];
+    this.truthTableHeaders = [];
+    const variables: string[] = [];
+
+    for (const v of expr) {
+      if ((v === 'p' || v === 'q' || v === 'r') && !variables.includes(v)) variables.push(v);
+    }
+
     const subprops: string[] = [];
     const regexSub = /\(([^()]+)\)/g;
     let match;
+
     while ((match = regexSub.exec(expr)) !== null) {
       if (!subprops.includes(match[1])) subprops.push(match[1]);
     }
-    // También agregar subproposiciones simples (por ejemplo, p→q)
+
     const simpleOps = expr.match(/([pqr][¬]?([∧∨→↔])[pqr][¬]?)/g) || [];
     simpleOps.forEach(op => { if (!subprops.includes(op)) subprops.push(op); });
-    // Encabezados: variables + subproposiciones + proposición principal
     this.truthTableHeaders = [...variables, ...subprops, expr];
 
-    // Generar todas las combinaciones de variables
     const combos = (vars: string[]): boolean[][] => {
       if (vars.length === 0) return [[]];
       const rest = combos(vars.slice(1));
@@ -151,44 +134,61 @@ export class PropositionalCalc {
         ...rest.map(c => [false, ...c])
       ];
     };
+
     const allCombos = combos(variables);
 
-    // Para cada combinación, calcular subproposiciones y resultado final
     for (const combo of allCombos) {
       const values: { [k: string]: boolean } = {};
       variables.forEach((v, i) => values[v] = combo[i]);
       const row: any = {};
-      // Variables
       variables.forEach(v => row[v] = values[v] ? 'V' : 'F');
-      // Subproposiciones
-      subprops.forEach(sub => {
-        row[sub] = this.evalProposition(sub, values) ? 'V' : 'F';
-      });
-      // Proposición principal
+      subprops.forEach(sub => row[sub] = this.evalProposition(sub, values) ? 'V' : 'F');
       row[expr] = this.evalProposition(expr, values) ? 'V' : 'F';
       this.truthTableSteps.push(row);
-  // ...no explanation needed...
     }
   }
 
-  onValidate(event: Event) {
-    event.preventDefault();
-    this.error = '';
-    this.result = '';
-    this.truthTableSteps = [];
-    const validation = this.validateProposition(this.proposition.trim());
-    if (validation) {
-      this.error = validation;
-    } else {
-      this.result = 'La proposición es válida.';
-      this.generateTruthTable(this.proposition.trim());
-      this.showModal = true;
+  private evalParser(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }): boolean {
+    let result = this.getTokenValue(tokens, values, posObj);
+    while (posObj.pos < tokens.length) {
+      const op = tokens[posObj.pos];
+      if (!['∧', '∨', '→', '↔'].includes(op)) break;
+      posObj.pos++;
+      const right = this.getTokenValue(tokens, values, posObj);
+      result = this.applyOp(result, right, op);
+    }
+    return result;
+  }
+
+  private getTokenValue(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }): boolean {
+    const token = tokens[posObj.pos];
+    switch (token) {
+      case '(': {
+        posObj.pos++;
+        const val = this.evalParser(tokens, values, posObj);
+        if (tokens[posObj.pos] === ')') posObj.pos++;
+        return val;
+      }
+      case '¬': {
+        posObj.pos++;
+        return this.tableRuleService.negacion(this.getTokenValue(tokens, values, posObj));
+      }
+      case 'p': posObj.pos++; return values['p'];
+      case 'q': posObj.pos++; return values['q'];
+      case 'r': posObj.pos++; return values['r'];
+      default:
+        posObj.pos++;
+        return false;
     }
   }
 
-  closeModal() {
-    this.showModal = false;
-    this.truthTableSteps = [];
-    this.result = '';
+  private applyOp(a: boolean, b: boolean, op: string): boolean {
+    switch (op) {
+      case '∧': return this.tableRuleService.conjuncion(a, b);
+      case '∨': return this.tableRuleService.disyuncion(a, b);
+      case '→': return this.tableRuleService.condicional(a, b);
+      case '↔': return this.tableRuleService.bicondicional(a, b);
+      default: return false;
+    }
   }
 }
