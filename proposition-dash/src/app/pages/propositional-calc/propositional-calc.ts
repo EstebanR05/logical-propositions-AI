@@ -106,8 +106,6 @@ export class PropositionalCalc {
     // Preprocesar para tratar negaciones como tokens únicos
     let processedExpr = expr.replace(/\s+/g, '');
     
-    console.log('Evaluando expresión:', expr, 'con valores:', values);
-    
     // Reemplazar todas las negaciones ¬[variable] con tokens especiales
     const variables = Object.keys(values).filter(key => !key.startsWith('¬') && /^[pqr]$/.test(key));
     variables.forEach((variable, index) => {
@@ -116,16 +114,12 @@ export class PropositionalCalc {
       processedExpr = processedExpr.replace(new RegExp(`¬${variable}`, 'g'), token);
     });
     
-    console.log('Expresión procesada:', processedExpr);
-    
     const tokens = processedExpr.split("");
     const posObj = { pos: 0 };
     try {
       const result = this.evalParser(tokens, values, posObj, variables);
-      console.log('Resultado final:', result);
       return result;
     } catch (e) {
-      console.error('Error evaluando:', e);
       return false;
     }
   }
@@ -214,9 +208,7 @@ export class PropositionalCalc {
           subValues[n] = this.tableRuleService.negacion(values[varName]);
         });
         // Debug: verificar valores para subproposiciones
-        console.log(`Evaluando ${sub} con valores:`, subValues);
         row[sub] = this.evalProposition(sub, subValues) ? 'V' : 'F';
-        console.log(`Resultado de ${sub}:`, row[sub]);
       });
       // Negaciones de subproposiciones
       negatedSubprops.forEach(negSub => {
@@ -284,7 +276,6 @@ export class PropositionalCalc {
 
   private getTokenValue(tokens: string[], values: { [k: string]: boolean }, posObj: { pos: number }, variables?: string[]): boolean {
     const token = tokens[posObj.pos];
-    console.log('Procesando token:', token, 'en posición:', posObj.pos, 'valores disponibles:', Object.keys(values));
     
     switch (token) {
       case '(': {
@@ -310,8 +301,6 @@ export class PropositionalCalc {
           if (tokens[i-1] === '§' && tokenStr.length > 1) break;
         }
         
-        console.log('Token especial encontrado:', tokenStr);
-        
         // Extraer el índice de la variable desde el token §N[index]§
         const match = tokenStr.match(/§N(\d+)§/);
         if (match && variables) {
@@ -319,7 +308,6 @@ export class PropositionalCalc {
           const variable = variables[varIndex];
           const negationKey = `¬${variable}`;
           posObj.pos = i;
-          console.log('Buscando negación:', negationKey, 'valor:', values[negationKey]);
           return values[negationKey] !== undefined ? values[negationKey] : this.tableRuleService.negacion(values[variable]);
         }
         posObj.pos = i;
@@ -329,7 +317,6 @@ export class PropositionalCalc {
         // Manejar variables p, q, r directamente
         if (/^[pqr]$/.test(token)) {
           posObj.pos++;
-          console.log('Variable encontrada:', token, 'valor:', values[token]);
           return values[token] !== undefined ? values[token] : false;
         }
         // Manejar tokens de subproposiciones SUB0, SUB1, etc.
